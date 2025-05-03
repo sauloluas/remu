@@ -6,7 +6,7 @@ use algin::{Vector, Zero};
 pub type Byte = u8;
 pub type IWord = u16;
 
-pub trait Word: Clone + Copy + Default {}
+pub trait Word: Clone + Copy + Zero {}
 
 impl Word for Byte {}
 impl Word for IWord {}
@@ -124,31 +124,34 @@ impl<T: Word> IndexMut<usize> for Memory<T> {
 }
 
 #[derive(Default, Copy, Clone, Debug)]
-pub enum Instruction {
+pub enum RootInsSet {
     #[default]
     Nop,
     Halt,
-    Show(RegAddress),
     Init(RegAddress, Imed),
-    And(RegAddress, RegAddress),
-    Or(RegAddress, RegAddress),
-    Xor(RegAddress, RegAddress),
+    And(RegAddress, RegAddress, RegAddress),
+    Or(RegAddress, RegAddress, RegAddress),
+    Xor(RegAddress, RegAddress, RegAddress),
+    Xnor(RegAddress, RegAddress, RegAddress),
     Add(RegAddress, RegAddress, RegAddress),
     Sub(RegAddress, RegAddress, RegAddress),
     Adi(RegAddress, Imed),
     Not(RegAddress, RegAddress),
     Shl(RegAddress, Imed),
+    Shr(RegAddress, Imed),
+    Ppct(RegAddress, RegAddress),
     Copy(RegAddress, RegAddress),
     Go(Label),
     Wz(RegAddress, Label),
+    Wnz(RegAddress, Label),
     Wneg(RegAddress, Label),
     When(RegAddress, Label),
 }
-pub type Ins = Instruction;
+pub type Ris = RootInsSet;
 
-impl Word for Instruction {}
+impl Word for Ris {}
 
-impl Zero for Instruction {
+impl Zero for Ris {
     fn zero() -> Self {
         Self::Nop
     }
@@ -185,7 +188,7 @@ where
     pub data_mem: Memory<D>,
 }
 
-impl<D: Word> Harvard<Instruction, D> {
+impl<D: Word> Harvard<Ris, D> {
     pub fn execute(&mut self) {
         let regs = &mut self.cpu.bank;
         let ins = &mut self.ins_mem;
@@ -197,73 +200,85 @@ impl<D: Word> Harvard<Instruction, D> {
             cycles += 1;
             print!("{i}. ");
             match ins[i] {
-                Ins::Nop => {
+                Ris::Nop => {
                     i += 1;
                     continue;
                 }
-                Ins::Halt => {
+                Ris::Halt => {
                     println!("Halt!");
                     break;
                 }
-                Ins::Init(rd, im) => {
+                Ris::Init(rd, im) => {
                     regs[rd] = im;
                     println!("{rd} <- {im}");
                 }
-                Ins::Show(r) => {
-                    println!("{r} = {}", regs[r]);
-                }
-                Ins::And(rd, rs) => {
-                    regs[rd] = regs[rd] & regs[rs];
-                    println!("{rd} <- {rd} & {rs}");
+                Ris::And(rd, rs, rt) => {
+                    regs[rd] = regs[rs] & regs[rt];
+                    println!("{rd} <- {rs} & {rt}");
                     println!("   {rd} = {}", regs[rd]);
                 }
-                Ins::Or(rd, rs) => {
-                    regs[rd] = regs[rd] | regs[rs];
-                    println!("{rd} <- {rd} | {rs}");
+                Ris::Or(rd, rs, rt) => {
+                    regs[rd] = regs[rs] | regs[rt];
+                    println!("{rd} <- {rs} | {rt}");
                     println!("   {rd} = {}", regs[rd]);
                 }
-                Ins::Xor(rd, rs) => {
-                    regs[rd] = regs[rd] ^ regs[rs];
-                    println!("{rd} <- {rd} ^ {rs}");
+                Ris::Xor(rd, rs, rt) => {
+                    regs[rd] = regs[rs] ^ regs[rt];
+                    println!("{rd} <- {rs} ^ {rt}");
                     println!("   {rd} = {}", regs[rd]);
                 }
-                Ins::Add(rd, rs, rt) => {
+                Ris::Xnor(rd, rs, rt) => {
+                    regs[rd] = !(regs[rs] ^ regs[rt]);
+                    println!("{rd} <- !({rs} ^ {rt})");
+                    println!("   {rd} = {}", regs[rd]);
+                }
+                Ris::Add(rd, rs, rt) => {
                     regs[rd] = regs[rs].wrapping_add(regs[rt]);
                     println!("{rd} <- {rs} + {rt}");
                     println!("   {rd} = {}", regs[rd]);
                 }
-                Ins::Sub(rd, rs, rt) => {
+                Ris::Sub(rd, rs, rt) => {
                     regs[rd] = regs[rs].wrapping_sub(regs[rt]);
                     println!("{rd} <- {rs} - {rt}");
                     println!("   {rd} = {}", regs[rd]);
                 }
-                Ins::Adi(rd, im) => {
+                Ris::Adi(rd, im) => {
                     regs[rd] = regs[rd].wrapping_add(im);
                     println!("{rd} <- {rd} + {im}");
                     println!("   {rd} = {}", regs[rd]);
                 }
-                Ins::Not(rd, rs) => {
+                Ris::Not(rd, rs) => {
                     regs[rd] = !regs[rs];
                     println!("{rd} <- !{rs}");
                     println!("   {rd} = {}", regs[rd]);
                 }
-                Ins::Shl(rd, im) => {
+                Ris::Shl(rd, im) => {
                     regs[rd] = regs[rd] << im;
                     println!("{rd} <- {rd} << {im}");
                     println!("   {rd} = {}", regs[rd]);
                 }
-                Ins::Copy(rd, rs) => {
+                Ris::Shr(rd, im) => {
+                    regs[rd] = regs[rd] >> im;
+                    println!("{rd} <- {rd} >> {im}");
+                    println!("   {rd} = {}", regs[rd]);
+                }
+                Ris::Ppct(rd, rs) => {
+                    regs[rd] = regs[rs].count_ones() as u8;
+                    println!("{rd} <- popcount({rs})");
+                    println!("   {rd} = {}", regs[rd]);
+                }
+                Ris::Copy(rd, rs) => {
                     regs[rd] = regs[rs];
                     println!("{rd} <- {rs}");
                     println!("   {rd} = {}", regs[rd]);
                 }
-                Ins::Go(lbl) => {
+                Ris::Go(lbl) => {
                     println!("PC <- {lbl}");
                     println!("");
                     i = lbl as usize;
                     continue;
                 }
-                Ins::Wz(rd, lbl) => {
+                Ris::Wz(rd, lbl) => {
                     println!("? {rd} == 0");
                     if regs[rd] == 0 {
                         println!("   True");
@@ -278,7 +293,22 @@ impl<D: Word> Harvard<Instruction, D> {
                         continue;
                     }
                 }
-                Ins::Wneg(rd, lbl) => {
+                Ris::Wnz(rd, lbl) => {
+                    println!("? {rd} != 0");
+                    if regs[rd] != 0 {
+                        println!("   True");
+                        println!("   PC <- {lbl}");
+                        println!("");
+                        i = lbl as usize;
+                        continue;
+                    } else {
+                        println!("   False");
+                        i += 1;
+                        println!("");
+                        continue;
+                    }
+                }
+                Ris::Wneg(rd, lbl) => {
                     println!("? {rd} < 0");
                     if regs[rd] > 127 {
                         println!("   True");
@@ -293,7 +323,7 @@ impl<D: Word> Harvard<Instruction, D> {
                         continue;
                     }
                 }
-                Ins::When(rd, lbl) => {
+                Ris::When(rd, lbl) => {
                     println!("? {rd}");
                     if regs[rd] == 0xFF {
                         println!("   True");
@@ -321,26 +351,20 @@ type Label = usize;
 
 fn main() {
     let root = Processor::new();
-    let mut ins_mem: Mem<Ins> = Mem::new(256);
+    let mut ins_mem: Mem<Ris> = Mem::new(256);
     let data_mem: Mem8 = Mem::new(256);
 
-    let _loop: Label = 2;
-    let _end: Label = 6;
-    ins_mem[0] = Ins::Init(Acc, 7);
-    ins_mem[1] = Ins::Init(Bacc, 5);
-    ins_mem[_loop] = Ins::Adi(Bacc, 255);
-    ins_mem[3] = Ins::Add(Tmp, Tmp, Acc);
-    ins_mem[4] = Ins::Wz(Bacc, _end);
-    ins_mem[5] = Ins::Go(_loop);
-    ins_mem[_end] = Ins::Copy(Acc, Tmp);
-    ins_mem[7] = Ins::Halt;
-
-
-    // ris! {
-    //     init Acc 3
-    //     init Bacc 5
-
-    // }
+    ins_mem[0] = Ris::Init(Acc, 11);
+    ins_mem[1] = Ris::Init(Bacc, 17);
+    ins_mem[2] = Ris::Xor(Carr, Acc, Bacc);
+    ins_mem[3] = Ris::And(Tmp, Acc, Bacc);
+    ins_mem[4] = Ris::Shl(Tmp, 1);
+    ins_mem[5] = Ris::And(Lo, Tmp, Carr);
+    ins_mem[6] = Ris::Copy(Acc, Carr);
+    ins_mem[7] = Ris::Copy(Bacc, Tmp);
+    ins_mem[8] = Ris::Wnz(Lo, 2);
+    ins_mem[9] = Ris::Or(Carr, Carr, Tmp);
+    ins_mem[10] = Ris::Halt;
 
     let mut computer = Harvard {
         cpu: root,
@@ -349,6 +373,8 @@ fn main() {
     };
 
     computer.execute();
+
+    println!("\n\nCarr: {}", computer.cpu.bank[Carr]);
 }
 
     // Or: And + Not
